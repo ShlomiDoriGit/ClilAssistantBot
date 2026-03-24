@@ -247,22 +247,30 @@ async def health():
 # ── STARTUP ───────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
-    await tg_app.initialize()
-    await tg_app.start()
-    # הפעל polling בbackground
-    asyncio.create_task(polling_loop())
-    # הפעל את ה-Telegram updater
-    asyncio.create_task(tg_app.updater.start_polling())
-    logger.info("Bot started ✅")
+    # אנחנו לא עושים await כבד כאן שעלול לתקוע את השרת
+    asyncio.create_task(start_bot_background())
+    logger.info("FastAPI startup complete, Bot starting in background... ✅")
+
+async def start_bot_background():
+    try:
+        await tg_app.initialize()
+        await tg_app.start()
+        # הפעל polling בbackground - חשוב להשתמש ב-drop_pending כדי שלא ייתקע על הודעות ישנות
+        await tg_app.updater.start_polling(drop_pending_updates=True)
+        # הפעל polling של Green API
+        asyncio.create_task(polling_loop())
+        logger.info("Telegram Bot & Green API Polling started! 🚀")
+    except Exception as e:
+        logger.error(f"Critical error starting background tasks: {e}")
 
 @app.on_event("shutdown")
 async def shutdown():
     await tg_app.stop()
 
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    import os
-    
+    # חובה להשתמש ב-0.0.0.0 ובפורט מ-Environment
     port = int(os.environ.get("PORT", 8080))
-    
-    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
+    # הרצה בצורה הזו מבטיחה ש-uvicorn שולט ב-Loop
+    uvicorn.run(app, host="0.0.0.0", port=port)
